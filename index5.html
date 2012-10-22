@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+h1 {
+  text-align: center;
+  font: bold 24px monospace;
+}
+
+h2 {
+  text-align: center;
+  font: bold 18px monospace;
+}
+
+.menu {
+  font: bold 24px monospace;
+}
+
+.enter {
+  fill: green;
+}
+
+.update {
+  fill: #333;
+}
+
+.graphSVG {
+  font: 12px sans-serif;
+}
+
+.axis path, .axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+</style>
+
+<body>
+<script src="d3.v2.min.js"></script>
+<h1>Off Label Drug Data Visualization Test</h1>
+<h2>Select a drug from one below</h2>
+<script>
+
+// SVG size for navigation menu
+var menuPadding = 20,
+    menuWidth = 200,
+    menuHeight = 450;
+
+// SVG size for graph
+var SVGmargin = {top: 20, right: 220, bottom: 30, left: 40},
+    SVGwidth = 960 - SVGmargin.left - SVGmargin.right,
+    SVGheight = 500 - SVGmargin.top - SVGmargin.bottom;
+
+// list of drugs for menu
+var drugs = [ "Cymbalta" , "Methadone", "Metoprolol" ];
+
+// animation settings
+var transitionIn = 1200, // ms for transition in
+    transitionOut = 1200, // msec for transition out
+    transitionOffset = 1000; // pixels for slides in and out
+
+// variable for graph SVG
+var format = d3.time.format("%m/%d/%y");
+
+var x = d3.time.scale()
+    .range([0, SVGwidth]);
+
+var y = d3.scale.linear()
+    .range([SVGheight, 0]);
+
+var z = d3.scale.category20c();
+
+var xAxis = d3.svg.axis()
+    .scale(x)
+    .orient("bottom")
+    .ticks(d3.time.years);
+
+var yAxis = d3.svg.axis()
+    .scale(y)
+    .orient("left");
+
+var stack = d3.layout.stack()
+    .offset("zero")
+    .values(function(d) { return d.values; })
+    .x(function(d) { return d.date; })
+    .y(function(d) { return d.value; });
+
+var nest = d3.nest()
+    .key(function(d) { return d.key; });
+
+var area = d3.svg.area()
+    .interpolate("cardinal")
+    .x(function(d) { return x(d.date); })
+    .y0(function(d) { return y(d.y0); })
+    .y1(function(d) { return y(d.y0 + d.y); });
+
+// create navigation menu SVG
+var menuSVG = d3.select("body").append("svg")
+    .attr("class", "menu")
+    .attr("width", menuWidth)
+    .attr("height", menuHeight)
+  .append("g")
+    .attr("transform", "translate(" + menuPadding + "," + (menuHeight / 2) + ")");
+
+// create graph SVG
+var graphSVG = d3.select("body").append("svg")
+    .attr("width", SVGwidth + SVGmargin.left + SVGmargin.right)
+    .attr("height", SVGheight + SVGmargin.top + SVGmargin.bottom)
+    .attr("class", "graphSVG")
+  .append("g")
+    .attr("transform", "translate(" + SVGmargin.left + "," + SVGmargin.top + ")");
+
+// function that draws menu and creates graph on hover over menu
+function navMenu(data) {
+
+  // display navigation menu text
+  var text = menuSVG.selectAll("text")
+    .data(data, function(d) { return d; })
+    .enter()
+    .append("text")
+      .attr("class", "enter")
+      .attr("dx", ".35em")
+      .attr("y", function(d,i) {return i*20; })
+      .style("fill-opacity", 1)
+      .text(function(d) {return d; })
+    .on("mouseover", function(d) { // load corresponding graph on hover
+      d3.select(this).style("fill", "black");
+      paintGraph(d);
+      });
+}
+
+// paints graph in graph SVG for corresponding drug
+function paintGraph(drugName) {
+
+  var filename = drugName + ".csv";
+
+  d3.csv(filename, function(data) {
+
+    // parse data
+    data.forEach(function(d) {
+      d.date = format.parse(d.date);
+      d.value = +d.value;
+    });
+
+    // remove old graph, if any
+    graphSVG.selectAll(".layer")
+      .transition()
+        .duration(transitionOut)
+        .ease("cubic-in-out")
+        .attr("transform", "translate(0," + transitionOffset + ")")
+        .style("fill-opacity", 1e-6)
+      .remove();
+    
+    // remove old axes, if any
+    graphSVG.selectAll("g")
+      .transition()
+        .duration(transitionOut)
+        .ease("cubic-in-out")
+        .attr("transform", "translate(0," + transitionOffset + ")")
+        .style("fill-opacity", 1e-6)
+        .remove();
+
+    var layers = stack(nest.entries(data));
+
+    x.domain(d3.extent(data, function(d) { return d.date; }));
+    y.domain([0, d3.max(data, function(d) { return d.y0 + d.y; })]);
+
+    // new data to SVG
+    var graphHandle = graphSVG.selectAll(".layer")
+        .data(layers);
+
+    // transition new graph
+    graphHandle.enter().append("path")
+        .attr("class", "layer")
+        .attr("d", function(d) { return area(d.values); })
+        .attr("transform", "translate(0,-" + transitionOffset + ")")
+        .style("fill", function(d, i) { return z(i); })
+        .style("fill-opacity", 1e-6)
+      // change this so that on mouseover, fills text box with appropriate data
+      .on("mouseover", function(){d3.select(this).style("fill-opacity", 0.3)})
+      .on("mouseout", function(){d3.select(this).style("fill-opacity", 1)})
+      .transition()
+        .duration(transitionIn)
+        .delay(transitionOut) // wait for old graph to disappear
+        .ease("cubic-in-out")
+        .style("fill-opacity", 1)
+        .attr("transform", "translate(0,0)");
+
+    // transition new axes
+    graphSVG.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0," + SVGheight-transitionOffset + ")")
+        .style("fill-opacity", 1e-6)
+        .call(xAxis)
+        .transition()
+          .duration(transitionIn)
+          .delay(transitionOut) // wait for old graph to disappear
+          .ease("cubic-in-out")
+          .style("fill-opacity", 1)
+          .attr("transform", "translate(0," + SVGheight + ")");
+
+    graphSVG.append("g")
+        .attr("class", "y axis")
+        .attr("transform", "translate(0,-" + transitionOffset + ")")
+        .style("fill-opacity", 1e-6)
+        .call(yAxis)
+        .transition()
+          .duration(transitionIn)
+          .delay(transitionOut) // wait for old graph to disappear
+          .ease("cubic-in-out")
+          .style("fill-opacity", 1)
+          .attr("transform", "translate(0,0)");
+  });
+
+}
+
+
+// display menu with list of drugs
+navMenu(drugs);
+
+
+
+</script>
+</body>
+</html>
